@@ -1,0 +1,8 @@
+<!doctype html><html><body>
+<h1>GuateRiegos 2.0</h1>
+<form method="post" enctype="multipart/form-data">
+  <input type="file" name="archivo" accept=".xml" required>
+  <button type="submit">Cargar XML</button>
+</form>
+<a href="{{ url_for('simular') }}">Ir a Simulación</a> | <a href="{{ url_for('ayuda') }}">Ayuda</a>
+</body></html>
