@@ -1,18 +1,41 @@
-from xmlio.ParserXML import ParserXML
-from core.Simulador import Simulador
-from xmlio.WriterXML import WriterXML
-from viz.TDAGraphRenderer import TDAGraphRenderer
-from flask import Flask
-from reports.ReporteHTML import ReporteHTML
 
-px = ParserXML("data/entrada_ejemplo.xml").parse()
-inv = px.invernaderos().get(0)
-plan = inv._planes.get(0)
-res = Simulador().simular_invernadero_plan(inv, plan)
-assert res.tiempo > 0
-WriterXML("out/salida.xml").escribir(px.invernaderos())
-TDAGraphRenderer().graficar_estado(inv, res, t=2, nombre_archivo="estado_test")
-app = Flask(__name__, template_folder="src/reports/templates")
-ReporteHTML("src/reports/templates").generar_por_invernadero(app, inv, "out")
-print("OK")
+import os
+from src.core.Sistema import Sistema
+from src.io.ParserXML import ParserXML
+from src.core.Simulador import Simulador
+from src.io.WriterXML import WriterXML
+from src.tda.Mapa import Mapa
 
+BASE = os.path.dirname(__file__)
+RAIZ = os.path.abspath(os.path.join(BASE, ".."))
+DATA = os.path.join(RAIZ, "data", "entrada.xml")
+OUT = os.path.join(RAIZ, "out")
+os.makedirs(OUT, exist_ok=True)
+
+sis = Sistema()
+ParserXML(sis).cargar_desde_archivo(DATA)
+
+
+inv = None
+if sis.invernaderos is not None:
+    for x in sis.invernaderos:
+        inv = x
+        break
+
+plan_nombre = None
+if inv is not None:
+    for p in inv.planes:
+        plan_nombre = p.nombre
+        break
+
+if inv is None or plan_nombre is None:
+    raise SystemExit("No hay datos en data/entrada.xml")
+
+res = Simulador(sis).simular_plan(inv.nombre, plan_nombre)
+mp_plan = Mapa()
+mp_plan.set(plan_nombre, res)
+mp_inv = Mapa()
+mp_inv.set(inv.nombre, mp_plan)
+
+WriterXML(sis).escribir_salida(os.path.join(OUT, "salida.xml"), mp_inv)
+print("OK. salida.xml generado.")

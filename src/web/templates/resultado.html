@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Resultados — {{ inv.nombre }} / {{ plan_nombre }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=11">
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="nav__brand">Sistema de Riego con Drones</div>
+    <div class="nav__links">
+      <a href="{{ url_for('index') }}">Inicio</a>
+      <a href="{{ url_for('ayuda') }}">Ayuda</a>
+    </div>
+  </nav>
+
+  <header class="hero hero--sm">
+    <div class="hero__content container">
+      <h1>Resultados: {{ inv.nombre }} — {{ plan_nombre }}</h1>
+      <p>Tiempo óptimo, consumos por dron y cronograma por segundo.</p>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="grid">
+      <article class="card reveal">
+        <h2 class="card__title">Estadísticas</h2>
+        <div class="stats">
+          <div class="stat">
+            <span class="stat__label">Tiempo óptimo</span>
+            <span class="stat__value">{{ resultado.tiempo_optimo }} s</span>
+          </div>
+          <div class="stat">
+            <span class="stat__label">Agua total</span>
+            <span class="stat__value">{{ "%.0f"|format(resultado.agua_total) }} L</span>
+          </div>
+          <div class="stat">
+            <span class="stat__label">Fertilizante total</span>
+            <span class="stat__value">{{ "%.0f"|format(resultado.fert_total) }} g</span>
+          </div>
+        </div>
+
+        <h3 class="subhead">Eficiencia por Dron</h3>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Dron</th><th>Litros</th><th>Gramos</th></tr></thead>
+            <tbody>
+              {% for par in resultado.por_dron %}
+                <tr><td>{{ par.k }}</td><td>{{ "%.0f"|format(par.v.a) }}</td><td>{{ "%.0f"|format(par.v.b) }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="card reveal">
+        <h2 class="card__title">Gráfico TDA y Reporte</h2>
+        <form method="get" action="{{ url_for('grafo_tda') }}" class="stack">
+          <label for="t" class="label">t (segundos)</label>
+          <div class="row">
+            <input id="t" class="input" type="number" name="t" value="1" min="1" step="1">
+            <button class="btn btn--primary" type="submit">Generar SVG</button>
+          </div>
+        </form>
+        <a class="btn btn--ghost mt-12" href="{{ url_for('reporte', inv_safe_name=inv.nombre|replace(' ','_')) }}">Abrir Reporte HTML</a>
+      </article>
+
+      <article class="card card--span reveal">
+        <h2 class="card__title">Instrucciones por Tiempo</h2>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Tiempo (s)</th>
+                {% for asig in inv.asignaciones %}
+                  <th>{{ asig.v.nombre }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for it in resultado.timeline %}
+              <tr>
+                <td>{{ it.segundos }}</td>
+                {% for asig in inv.asignaciones %}
+                  {% set acc_txt = "" %}
+                  {% for acc in it.acciones %}
+                    {% if acc.dron_nombre == asig.v.nombre %}
+                      {% set acc_txt = acc.accion %}
+                    {% endif %}
+                  {% endfor %}
+                  <td>{{ acc_txt }}</td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <a class="btn btn--outline mt-12" href="{{ url_for('index') }}">Volver al inicio</a>
+      </article>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__inner">
+      <p>Sistema de Riego Automatizado — Proyecto Final</p>
+    </div>
+  </footer>
+
+  <script>
+    const obs = new IntersectionObserver((entries)=>{
+      for (const e of entries) if (e.isIntersecting) e.target.classList.add('reveal--in');
+    }, {threshold: .12});
+    document.querySelectorAll('.reveal').forEach(el=>obs.observe(el));
+  </script>
+</body>
+</html>

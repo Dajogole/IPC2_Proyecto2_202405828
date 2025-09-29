@@ -1,18 +1,35 @@
-from tda.Lista import ListaEnlazada
+from .Nodo import Nodo
 
 class Cola:
+    __slots__ = ("frente", "final", "_len")
+
     def __init__(self):
-        self._datos = ListaEnlazada()
+        self.frente = None
+        self.final = None
+        self._len = 0
 
-    def __len__(self): return len(self._datos)
-    def esta_vacia(self): return len(self)==0
-
-    def encolar(self, x): self._datos.append(x)
+    def encolar(self, valor):
+        nuevo = Nodo(valor)
+        if self.final is None:
+            self.frente = nuevo
+            self.final = nuevo
+        else:
+            self.final.siguiente = nuevo
+            self.final = nuevo
+        self._len += 1
 
     def desencolar(self):
-        if self.esta_vacia(): return None
-        return self._datos.remove_at(0)
+        if self.frente is None:
+            return None
+        valor = self.frente.valor
+        self.frente = self.frente.siguiente
+        if self.frente is None:
+            self.final = None
+        self._len -= 1
+        return valor
 
-    def frente(self):
-        if self.esta_vacia(): return None
-        return self._datos.get(0)
+    def esta_vacia(self):
+        return self.frente is None
+
+    def __len__(self):
+        return self._len

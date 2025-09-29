@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sistema de Riego con Drones</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=12">
+</head>
+<body>
+
+
+  <nav class="nav">
+    <div class="nav__brand">Sistema de Riego con Drones</div>
+    <div class="nav__links">
+      <a href="{{ url_for('index') }}">Inicio</a>
+      <a href="{{ url_for('ayuda') }}">Ayuda</a>
+    </div>
+  </nav>
+
+
+  <div class="container">
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for msg in messages %}
+          <div class="flash">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+  </div>
+
+  <main class="container">
+    <section class="grid">
+
+      <article class="card reveal">
+        <h2 class="card__title">Cargar Configuración XML</h2>
+        <form action="{{ url_for('cargar') }}" method="post" enctype="multipart/form-data" class="stack">
+          <label class="label">Archivo XML</label>
+          <input class="input" type="file" name="archivo" accept=".xml" required>
+          <button class="btn btn--primary" type="submit">Cargar configuración</button>
+        </form>
+        <p class="muted mt-8">Se guardará como <code>./data/entrada.xml</code> y se cargará al sistema.</p>
+      </article>
+
+
+      <article class="card reveal">
+        <h2 class="card__title">Simulación de Riego</h2>
+        {% if invernaderos|length == 0 %}
+          <p class="muted">Primero cargue un archivo de configuración.</p>
+        {% else %}
+        <form action="{{ url_for('simular') }}" method="post" class="stack">
+          <div>
+            <label for="inv-select" class="label">Seleccionar Invernadero</label>
+            <select id="inv-select" name="invernadero" class="select" required>
+              {% for inv in invernaderos %}
+                <option value="{{ inv.nombre }}">{{ inv.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label for="plan-select" class="label">Seleccionar Plan de Riego</label>
+            <select id="plan-select" name="plan" class="select" required></select>
+          </div>
+          <button class="btn btn--primary" type="submit">Simular riego</button>
+        </form>
+
+
+        <script id="data-planes" type="application/json">
+        {
+        {% for inv in invernaderos %}
+          {{ inv.nombre|tojson }}: [
+            {% for plan in inv.planes %}
+              {{ plan.nombre|tojson }}{% if not loop.last %},{% endif %}
+            {% endfor %}
+          ]{% if not loop.last %},{% endif %}
+        {% endfor %}
+        }
+        </script>
+        <script>
+          const PLANES_POR_INV = JSON.parse(document.getElementById('data-planes').textContent);
+          const invSel  = document.getElementById('inv-select');
+          const planSel = document.getElementById('plan-select');
+          function refrescarPlanes(){
+            const planes = PLANES_POR_INV[invSel.value] || [];
+            planSel.innerHTML = "";
+            for (const p of planes){
+              const o=document.createElement('option'); o.value=p; o.textContent=p; planSel.appendChild(o);
+            }
+          }
+          document.addEventListener('DOMContentLoaded', refrescarPlanes);
+          invSel.addEventListener('change', refrescarPlanes);
+        </script>
+        {% endif %}
+      </article>
+
+
+      <article class="card reveal">
+        <h2 class="card__title">Generar Reportes</h2>
+        {% if ultimo %}
+          <div class="stack">
+            <a class="btn btn--ghost" href="{{ url_for('reporte', inv_safe_name=ultimo.inv.nombre|replace(' ','_')) }}">Abrir Reporte HTML</a>
+
+
+            <button class="btn btn--ghost" type="button" id="btn-tda">Generar Gráfico TDA</button>
+
+            <a class="btn btn--ghost" href="{{ url_for('descargar_salida') }}">Descargar XML de Salida</a>
+          </div>
+          <p class="muted mt-8">Los archivos también se guardan en <code>./out/</code>.</p>
+
+
+          <dialog id="dlg-tda">
+            <form method="get" action="{{ url_for('grafo_tda') }}" target="_blank" class="stack">
+              <h3 class="subhead">Generar Gráfico TDA</h3>
+              <p class="muted">Ingrese el segundo <b>t</b> (1–{{ ultimo_vm.tiempo_optimo if ultimo_vm else 1 }}).</p>
+              <input class="input" type="number" name="t" id="inp-t" min="1"
+                     value="{{ ultimo_vm.tiempo_optimo if ultimo_vm else 1 }}" required>
+              <div class="row">
+                <button class="btn btn--primary" type="submit">Generar</button>
+                <button class="btn btn--outline" type="button" onclick="document.getElementById('dlg-tda').close()">Cancelar</button>
+              </div>
+            </form>
+          </dialog>
+
+          <script>
+            document.getElementById('btn-tda')?.addEventListener('click', ()=>{
+              const dlg = document.getElementById('dlg-tda');
+              dlg.showModal();
+              const inp = document.getElementById('inp-t');
+              setTimeout(()=>{inp.focus(); inp.select();}, 50);
+            });
+          </script>
+        {% else %}
+          <div class="stack">
+            <button class="btn btn--ghost" type="button" disabled>Generar Reporte HTML</button>
+            <button class="btn btn--ghost" type="button" disabled>Generar Gráfico TDA</button>
+            <button class="btn btn--ghost" type="button" disabled>Descargar XML de Salida</button>
+          </div>
+          <p class="muted mt-8">Se habilitan automáticamente después de una simulación.</p>
+        {% endif %}
+      </article>
+
+
+      <article class="card reveal" id="resultados">
+        <h2 class="card__title">Resultados de Simulación</h2>
+
+        {% if ultimo_vm %}
+          <p class="muted">
+            Invernadero: <b>{{ ultimo_vm.inv_nombre }}</b> &nbsp;|&nbsp;
+            Plan: <b>{{ ultimo_vm.plan_nombre }}</b>
+          </p>
+
+          <div class="stats">
+            <div class="stat"><span class="stat__label">Tiempo óptimo: </span><span class="stat__value">{{ ultimo_vm.tiempo_optimo }} s</span></div>
+            <div class="stat"><span class="stat__label">Agua total: </span><span class="stat__value">{{ "%.0f"|format(ultimo_vm.agua_total) }} L</span></div>
+            <div class="stat"><span class="stat__label">Fertilizante total: </span><span class="stat__value">{{ "%.0f"|format(ultimo_vm.fert_total) }} g</span></div>
+          </div>
+
+          <div class="results-scroll">
+
+            <h3 class="subhead">Asignación de Drones a Hileras</h3>
+            <div class="table-wrap">
+              <table class="table">
+                <thead><tr><th>Hilera</th><th>Dron</th></tr></thead>
+                <tbody>
+                  {% for r in ultimo_vm.asign_rows %}
+                    <tr><td>H{{ r.hilera }}</td><td>{{ r.dron }}</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+
+
+            <h3 class="subhead mt-12">Eficiencia por Dron</h3>
+            <div class="table-wrap">
+              <table class="table">
+                <thead><tr><th>Dron</th><th>Litros</th><th>Gramos</th></tr></thead>
+                <tbody>
+                  {% for r in ultimo_vm.efic_rows %}
+                    <tr><td>{{ r.dron }}</td><td>{{ "%.0f"|format(r.litros) }}</td><td>{{ "%.0f"|format(r.gramos) }}</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+
+
+            <h3 class="subhead mt-12">Instrucciones por Tiempo</h3>
+            <div class="table-wrap">
+              <table class="table sticky-head">
+                <thead>
+                  <tr>
+                    <th>Tiempo (s)</th>
+                    {% for d in ultimo_vm.dron_columns %}
+                      <th>{{ d }}</th>
+                    {% endfor %}
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in ultimo_vm.timeline_rows %}
+                    <tr>
+                      <td>{{ row.segundos }}</td>
+                      {% for d in ultimo_vm.dron_columns %}
+                        <td>{{ row.acciones.get(d, "") }}</td>
+                      {% endfor %}
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        {% else %}
+          <p class="muted">Los resultados aparecerán después de simular un plan.</p>
+        {% endif %}
+      </article>
+
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__inner">
+      <p>Sistema de Riego Automatizado — Proyecto Final</p>
+    </div>
+  </footer>
+
+  <script>
+    const obs=new IntersectionObserver(es=>{for(const e of es){if(e.isIntersecting)e.target.classList.add('reveal--in')}},{threshold:.12});
+    document.querySelectorAll('.reveal').forEach(el=>obs.observe(el));
+  </script>
+</body>
+</html>

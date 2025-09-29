@@ -1,139 +1,222 @@
-from tda.Lista import ListaEnlazada
-from domain.PlanRiego import PlanPaso
+from ..tda.ListaSimple import ListaSimple
+from ..tda.Mapa import Mapa, Par
+from ..domain import InstruccionDron, InstruccionesTiempo, PasoPlan, ParNumeros, ResultadoPlan
+from ..utils.Calibracion import Calibracion
 
-class AccionDron:
-    def __init__(self, dron_nombre:str, accion:str):
-        self.dron = dron_nombre
-        self.accion = accion
-
-class Segundo:
-    def __init__(self, t:int):
-        self.t = t
-        self.acciones = ListaEnlazada()  
-
-class ResultadoSim:
-    def __init__(self, tiempo:int, timeline:ListaEnlazada, totL:float, totG:float, porDron:ListaEnlazada):
-        self.tiempo = tiempo
-        self.timeline = timeline
-        self.total_litros = totL
-        self.total_gramos = totG
-        self.por_dron = porDron  
 
 class Scheduler:
-    def __init__(self):
-        pass
+   
+    def __init__(self, invernadero, drones_mapa):
+        self.inv = invernadero
+        self.drones = drones_mapa                    
+        self._agua_total = 0.0
+        self._fert_total = 0.0
+        self._por_dron = Mapa()                     
+        self._timeline = ListaSimple()                
 
-    def _drone_por_hilera(self, inv, hilera_num):
-        for d in inv.drones():
-            if d.hilera()==hilera_num:
-                return d
+
+    def _fmt_mov(self, accion: str, hilera: int, pos_actual: int) -> str:
+        """Devuelve 'Adelante(H#P#)' o 'Atras(H#P#)' usando la POSICIÓN ALCANZADA en ese segundo."""
+        return f"{accion}(H{hilera}P{pos_actual})"
+
+    def _buscar_plan(self, plan_nombre: str):
+        if self.inv is None or self.inv.planes is None:
+            return None
+        for p in self.inv.planes:
+            if p.nombre == plan_nombre:
+                return p
         return None
 
-    def _plant_info(self, inv, hil, pos):
-        h = inv.hilera(hil)
-        pl = h.planta_en(pos) if h else None
-        if pl: return pl.litros(), pl.gramos()
-        return 0.0,0.0
+    def _dron_por_hilera(self, hilera_num: int):
+        asign = self.inv.asignaciones.get(hilera_num)
+        if asign is None:
+            return None
+        dron = self.drones.get(asign.nombre)
+        if dron is not None:
+            return dron
+        return self.drones.get(getattr(asign, "id", None))
 
-    def simular(self, invernadero, plan):
-       
-        for paso in plan.pasos():
-            d = self._drone_por_hilera(invernadero, paso.hilera)
-            if d: d.objetivos().encolar(paso.posicion)
+    def _planta(self, h: int, p: int):
+        hil = self.inv.hileras.get(h)
+        if hil is None:
+            return None
+        if hasattr(hil, "plantas"):
+            return hil.plantas.get(p)
+        return None
 
-        timeline = ListaEnlazada()
-        porDron = ListaEnlazada()
-        t = 0
-        ultimo_riego_t = 0
+    def _len_lista(self, lista):
+        try:
+            return len(lista)
+        except TypeError:
+            c = 0
+            for _ in lista:
+                c += 1
+            return c
 
-      
-        nodo_paso = plan.pasos()._cabeza
+    def _validar_plan(self, plan):
+        n = self._len_lista(plan.pasos)
+        if n == 0:
+            raise ValueError("El plan no contiene pasos.")
+        i = 0
+        for paso in plan.pasos:
+            if paso.hilera < 1 or paso.hilera > self.inv.numero_hileras:
+                raise ValueError(f"Paso #{i+1}: hilera {paso.hilera} fuera de 1..{self.inv.numero_hileras}.")
+            if paso.posicion < 1 or paso.posicion > self.inv.plantas_x_hilera:
+                raise ValueError(f"Paso #{i+1}: posición {paso.posicion} fuera de 1..{self.inv.plantas_x_hilera}.")
+            if self._dron_por_hilera(paso.hilera) is None:
+                raise ValueError(f"Paso #{i+1}: la hilera {paso.hilera} no tiene dron asignado.")
+            if self._planta(paso.hilera, paso.posicion) is None:
+                raise ValueError(f"Paso #{i+1}: no existe la planta H{paso.hilera}-P{paso.posicion}.")
+            i += 1
 
+    def _init_por_dron(self):
+        for par in self.drones:
+            self._por_dron.set(par.k, ParNumeros(0.0, 0.0))
 
-        def actualizar_por_dron(nombre, l, g):
-           
-            i=0
-            encontrado = False
-            for s in porDron:
-               
-                p1 = s.split("|")
-                if p1[0]==nombre:
-                    l0 = float(p1[1]); g0 = float(p1[2])
-                    nuevo = f"{nombre}|{l0+l}|{g0+g}"
-                    porDron.remove_at(i)
-                    porDron.prepend(nuevo)
-                    encontrado = True
-                    break
-                i+=1
-            if not encontrado:
-                porDron.append(f"{nombre}|{l}|{g}")
+    def _siguiente_objetivo_para_hilera(self, plan, idx_actual, hilera):
 
-        def todos_fin():
-            for d in invernadero.drones():
-                if not d.fin_empleado(): return False
-            return True
-
-        while nodo_paso is not None or not todos_fin():
-            t += 1
-            seg = Segundo(t)
-           
-            rego_este_segundo = False
-            if nodo_paso is not None:
-                paso:PlanPaso = nodo_paso.valor
-                dr = self._drone_por_hilera(invernadero, paso.hilera)
-                if dr is not None:
-               
-                    objetivo = dr.objetivos().frente()
-                    if objetivo == paso.posicion and dr.pos()==objetivo:
-                        
-                        seg.acciones.append(AccionDron(dr.nombre(),"Regar"))
-                        l,g = self._plant_info(invernadero, paso.hilera, paso.posicion)
-                        dr.sumar(l,g)
-                        actualizar_por_dron(dr.nombre(), l, g)
-                        dr.objetivos().desencolar()
-                        nodo_paso = nodo_paso.siguiente
-                        rego_este_segundo = True
-                        ultimo_riego_t = t
-           
-            for dr in invernadero.drones():
-               
-                ya = False
-                for a in seg.acciones:
-                    if a.dron == dr.nombre() and a.accion=="Regar":
-                        ya = True
+        i = idx_actual
+        while True:
+            try:
+                paso = plan.pasos.obtener(i)
+            except Exception:
+                j = 0
+                paso = None
+                for pp in plan.pasos:
+                    if j == i:
+                        paso = pp
                         break
-                if ya: continue
+                    j += 1
+            if paso is None:
+                return None
+            if paso.hilera == hilera:
+                return paso.posicion
+            i += 1
 
-                if dr.objetivos().esta_vacia():
-                    if not dr.fin_empleado():
-                        seg.acciones.append(AccionDron(dr.nombre(),"FIN"))
-                        dr.marcar_fin()
-                    else:
-                       
-                        pass
+
+    def ejecutar(self, plan_nombre: str):
+        plan = self._buscar_plan(plan_nombre)
+        if plan is None:
+            raise ValueError("Plan no encontrado en el invernadero seleccionado.")
+
+        self._validar_plan(plan)
+        self._init_por_dron()
+
+        total_pasos = self._len_lista(plan.pasos)
+        watchdog_max = total_pasos * (self.inv.plantas_x_hilera + 2) + 100
+
+        idx = 0
+        tiempo = 0
+
+        while idx < total_pasos:
+            tiempo += 1
+            if tiempo > watchdog_max:
+                raise RuntimeError("La simulación excedió el límite de seguridad. "
+                                   "Revise asignaciones y pasos del plan (posiciones alcanzables).")
+
+            acciones_seg = ListaSimple()
+
+
+            try:
+                paso = plan.pasos.obtener(idx)
+            except Exception:
+                j = 0
+                paso = None
+                for pp in plan.pasos:
+                    if j == idx:
+                        paso = pp
+                        break
+                    j += 1
+            if paso is None:
+                break
+
+            hilera_obj = paso.hilera
+            pos_obj    = paso.posicion
+
+
+            dron_riego = self._dron_por_hilera(hilera_obj)
+            if dron_riego is None:
+                raise RuntimeError(f"No hay dron asignado para la hilera {hilera_obj}.")
+
+            if dron_riego.posicion < pos_obj:
+                dron_riego.posicion += 1
+                acciones_seg.append(InstruccionDron(
+                    dron_riego.nombre, self._fmt_mov("Adelante", hilera_obj, dron_riego.posicion)))
+            elif dron_riego.posicion > pos_obj:
+                dron_riego.posicion -= 1
+                acciones_seg.append(InstruccionDron(
+                    dron_riego.nombre, self._fmt_mov("Atras", hilera_obj, dron_riego.posicion)))
+            else:
+                acciones_seg.append(InstruccionDron(dron_riego.nombre, "Regar"))
+                self._aplicar_riego(dron_riego, paso)
+                idx += 1 
+
+
+            for par in self.drones:
+                dr = par.v
+                if dr is dron_riego:
+                    continue
+                if getattr(dr, "terminado", False):
+                    acciones_seg.append(InstruccionDron(dr.nombre, "Fin"))
+                    continue
+
+                objetivo = self._siguiente_objetivo_para_hilera(plan, idx, dr.hilera)
+                if objetivo is None:
+                    dr.terminado = True
+                    acciones_seg.append(InstruccionDron(dr.nombre, "Fin"))
+                    continue
+
+                if dr.posicion < objetivo:
+                    dr.posicion += 1
+                    acciones_seg.append(InstruccionDron(
+                        dr.nombre, self._fmt_mov("Adelante", dr.hilera, dr.posicion)))
+                elif dr.posicion > objetivo:
+                    dr.posicion -= 1
+                    acciones_seg.append(InstruccionDron(
+                        dr.nombre, self._fmt_mov("Atras", dr.hilera, dr.posicion)))
                 else:
-                    objetivo = dr.objetivos().frente()
-                    if dr.pos() < objetivo:
-                        dr.set_pos(dr.pos()+1)
-                        seg.acciones.append(AccionDron(dr.nombre(), f"Adelante (H{dr.hilera()}P{dr.pos()})"))
-                    elif dr.pos() > objetivo:
-                        dr.set_pos(dr.pos()-1)
-                        seg.acciones.append(AccionDron(dr.nombre(), f"Atrás (H{dr.hilera()}P{dr.pos()})"))
-                    else:
-                    
-                        seg.acciones.append(AccionDron(dr.nombre(),"Esperar"))
-            timeline.append(seg)
+                    acciones_seg.append(InstruccionDron(dr.nombre, "Esperar"))
 
-            
-            if nodo_paso is None:
-                done = True
-                for d in invernadero.drones():
-                    if not d.fin_empleado(): done = False
-                if done: break
 
-      
-        totalL=0.0; totalG=0.0
-        for d in invernadero.drones():
-            totalL += d.litros(); totalG += d.gramos()
+            self._timeline.append(InstruccionesTiempo(tiempo, acciones_seg))
 
-        return ResultadoSim(ultimo_riego_t, timeline, totalL, totalG, porDron)
+
+        cal = Calibracion()
+        over = cal.overhead_cierre_segundos()
+        if over > 0:
+
+            for par in self.drones:
+                setattr(par.v, "terminado", True)
+
+            for _ in range(over):
+                acciones_seg = ListaSimple()
+                for par in self.drones:
+                    dr = par.v
+                    acciones_seg.append(InstruccionDron(dr.nombre, "Fin"))
+                tiempo += 1
+                self._timeline.append(InstruccionesTiempo(tiempo, acciones_seg))
+
+
+        return ResultadoPlan(
+            tiempo_optimo=tiempo,      
+            agua_total=self._agua_total,
+            fert_total=self._fert_total,
+            por_dron_mapa=self._por_dron,
+            timeline_lista=self._timeline
+        )
+
+    def _aplicar_riego(self, dron, paso):
+        planta = self._planta(paso.hilera, paso.posicion)
+        if planta is None:
+            return
+        dron.agua_acum = getattr(dron, "agua_acum", 0.0) + planta.litros
+        dron.fert_acum = getattr(dron, "fert_acum", 0.0) + planta.gramos
+        self._agua_total += planta.litros
+        self._fert_total += planta.gramos
+
+        par = self._por_dron.get(dron.nombre)
+        if par is None:
+            self._por_dron.set(dron.nombre, ParNumeros(planta.litros, planta.gramos))
+        else:
+            par.a += planta.litros
+            par.b += planta.gramos

@@ -1,5 +1,43 @@
-<!doctype html><html><body>
-<h2>Ayuda / Acerca de</h2>
-<p>Estudiante: [Tu Nombre] — Carnet: #Carnet</p>
-<p>Repositorio: IPC2_Proyecto2_#Carnet (ver README y documentación en /docs).</p>
-</body></html>
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ayuda / Acerca de</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=11">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav__brand">Sistema de Riego con Drones</div>
+    <div class="nav__links">
+      <a href="{{ url_for('index') }}">Inicio</a>
+      <a href="{{ url_for('ayuda') }}">Ayuda</a>
+    </div>
+  </nav>
+
+  <header class="hero hero--sm">
+    <div class="hero__content container">
+      <h1>Ayuda / Acerca de</h1>
+      <p>Guía rápida para ejecutar en macOS + Safari.</p>
+    </div>
+  </header>
+
+  <main class="container">
+    <article class="card">
+      <h2 class="card__title">Pasos</h2>
+      <ol class="list">
+        <li>Crear y activar venv: <code>python3 -m venv .venv && source .venv/bin/activate</code></li>
+        <li>Instalar: <code>pip install flask graphviz</code></li>
+        <li>Instalar Graphviz: <code>brew install graphviz</code> &nbsp;→&nbsp; verificar: <code>dot -V</code></li>
+        <li>Levantar: <code>flask --app src.web.app run -p 8000</code> y abrir: <code>open -a "Safari" http://127.0.0.1:8000</code></li>
+      </ol>
+    </article>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__inner">
+      <p>Sistema de Riego Automatizado — Proyecto Final</p>
+    </div>
+  </footer>
+</body>
+</html>
